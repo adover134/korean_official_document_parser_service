@@ -72,14 +72,22 @@ def run_stage1(input_path: Path, out_md: Path, kordoc_version: str) -> str:
 
 
 def run_pass1(
-    stage1_text: str, source_name: str, out_json: Path | None, model: str, host: str
+    stage1_text: str,
+    source_name: str,
+    out_json: Path | None,
+    model: str | None = None,
+    host: str = "http://localhost:11434",
+    backend=None,
 ) -> list[dict]:
-    """제목 후보 추출(규칙) + 계층 분류(LLM)를 실행하고, 지정 시 결과를 JSON으로 저장."""
+    """제목 후보 추출(규칙) + 계층 분류(LLM)를 실행하고, 지정 시 결과를 JSON으로 저장.
+
+    `backend`를 주면 Ollama 대신 그 백엔드(예: OpenAI 호환 API)로 분류한다 — `classify_and_merge()`
+    참고."""
     candidates = extract_candidates(stage1_text)
     if not candidates:
         return []
 
-    merged = classify_and_merge(candidates, model, host)
+    merged = classify_and_merge(candidates, model, host, backend=backend)
 
     counts: dict[str, int] = {}
     for m in merged:
