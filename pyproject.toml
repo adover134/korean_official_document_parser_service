@@ -5,9 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hwp-hierarchical-md"
 version = "0.1.0"
-description = "Convert hierarchical Korean HWP/HWPX official documents to structure-preserving Markdown"
+description = "Convert hierarchical Korean HWP/HWPX official documents to structure-preserving Markdown (CLI + API)"
 requires-python = ">=3.10"
 readme = "README.md"
+license = "MIT AND LicenseRef-Commons-Clause"
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110.0", "uvicorn>=0.29.0", "python-multipart>=0.0.9"]
+dotenv = ["python-dotenv>=1.0.0"]
 
 [project.scripts]
 hwp2md = "hwp_hierarchical_md.cli:main"
