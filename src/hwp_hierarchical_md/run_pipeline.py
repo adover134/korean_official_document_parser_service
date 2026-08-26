@@ -2,7 +2,8 @@
 Pass2 판단 결과를 markdown 초안에 결정론적으로 적용)을 한 번에 실행한다.
 
 Stage1(라이브러리 변환)·Pass1(후보 추출+LLM 계층 판단)·Pass2(판단 결과의 결정론적 적용) 세 단계를
-하나의 명령으로 묶은 최종 구현이다. 설계 배경은 저장소 루트의 README.md·SKILL.md 참고.
+하나의 명령으로 묶은 최종 구현이다. 설계 배경은 저장소 루트의 README.md, 판단 규칙의 상세 설계는
+https://github.com/adover134/korean_official_document_parser_skill/blob/main/SKILL.md 참고.
 
 ## Stage1 라이브러리로 kordoc을 쓰는 이유
 `hwp2md`(Go)와 비교 검증한 결과, kordoc은 표 병합 셀(rowspan/colspan)·표 위치·읽기 순서 보존이
