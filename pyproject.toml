@@ -13,6 +13,7 @@ license = "MIT AND LicenseRef-Commons-Clause"
 [project.optional-dependencies]
 api = ["fastapi>=0.110.0", "uvicorn>=0.29.0", "python-multipart>=0.0.9"]
 dotenv = ["python-dotenv>=1.0.0"]
+tracing = ["langfuse>=3.0.0"]
 
 [project.scripts]
 hwp2md = "hwp_hierarchical_md.cli:main"

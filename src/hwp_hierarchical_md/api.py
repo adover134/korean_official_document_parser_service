@@ -23,9 +23,15 @@ from pathlib import Path
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 
-from .cli import _API_KEY_ENV_VARS, _DEFAULT_BASE_URLS, check_npx
+from .cli import _API_KEY_ENV_VARS, _DEFAULT_BASE_URLS, _load_dotenv_if_present, check_npx
 from .llm_backend import OllamaBackend, OpenAICompatBackend
 from .run_pipeline import derive_title_from_filename, run_pass1, run_pass2, run_stage1
+from .tracing import flush
+
+# 배포 환경(Docker 등)은 환경변수를 직접 주입하지만, 로컬에서 uvicorn을 바로 띄워 테스트할 때는
+# cwd의 .env를 못 읽으면 HWP2MD_*/LANGFUSE_* 등이 전부 빠진 채로 서버가 뜬다 — cli.py와 동일하게
+# 모듈 로드 시점(요청 처리 전, import 순서상 가장 이른 시점)에 조용히 시도한다.
+_load_dotenv_if_present()
 
 SUPPORTED_EXTENSIONS = {".hwp", ".hwpx"}
 
@@ -92,3 +98,7 @@ async def convert(file: UploadFile = File(...)) -> str:
             return run_pass2(stage1_text, classified, title)
         except Exception as e:
             raise HTTPException(500, f"변환 실패: {type(e).__name__}: {e}") from e
+        finally:
+            # 요청량이 낮은 문서 변환 API라 백그라운드 배치 전송을 기다리기보다, 요청 하나
+            # 끝날 때마다 바로 보내서 Langfuse 대시보드에서 지연 없이 확인할 수 있게 한다.
+            flush()

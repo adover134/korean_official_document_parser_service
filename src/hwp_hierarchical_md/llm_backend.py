@@ -25,6 +25,8 @@ import time
 import urllib.error
 import urllib.request
 
+from .tracing import trace_generation
+
 
 class LLMBackend:
     """system/user 프롬프트로 LLM을 호출해 JSON 객체 하나를 받아오는 계약."""
@@ -59,17 +61,29 @@ class OllamaBackend(LLMBackend):
         r = urllib.request.Request(
             f"{self.host}/api/chat", data=data, headers={"Content-Type": "application/json"}
         )
-        t0 = time.time()
-        with urllib.request.urlopen(r, timeout=300) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        dt = time.time() - t0
+        with trace_generation(
+            name="classify-headings-batch",
+            model=self.model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        ) as record:
+            t0 = time.time()
+            with urllib.request.urlopen(r, timeout=300) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            dt = time.time() - t0
 
-        content = body["message"]["content"]
-        print(
-            f"완료 ({dt:.1f}s) prompt_eval={body.get('prompt_eval_count')} "
-            f"eval={body.get('eval_count')}"
-        )
-        return json.loads(content)
+            content = body["message"]["content"]
+            print(
+                f"완료 ({dt:.1f}s) prompt_eval={body.get('prompt_eval_count')} "
+                f"eval={body.get('eval_count')}"
+            )
+            parsed = json.loads(content)
+            record["output"] = parsed
+            record["usage"] = {
+                "input": body.get("prompt_eval_count"),
+                "output": body.get("eval_count"),
+            }
+            return parsed
 
 
 class OpenAICompatBackend(LLMBackend):
@@ -109,16 +123,28 @@ class OpenAICompatBackend(LLMBackend):
                 "User-Agent": "hwp-hierarchical-md/0.1",
             },
         )
-        t0 = time.time()
-        try:
-            with urllib.request.urlopen(r, timeout=300) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"{self.base_url} 호출 실패 ({e.code}): {detail[:500]}") from e
-        dt = time.time() - t0
+        with trace_generation(
+            name="classify-headings-batch",
+            model=self.model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        ) as record:
+            t0 = time.time()
+            try:
+                with urllib.request.urlopen(r, timeout=300) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"{self.base_url} 호출 실패 ({e.code}): {detail[:500]}") from e
+            dt = time.time() - t0
 
-        content = body["choices"][0]["message"]["content"]
-        usage = body.get("usage", {})
-        print(f"완료 ({dt:.1f}s) prompt_tokens={usage.get('prompt_tokens')} completion_tokens={usage.get('completion_tokens')}")
-        return json.loads(content)
+            content = body["choices"][0]["message"]["content"]
+            usage = body.get("usage", {})
+            print(f"완료 ({dt:.1f}s) prompt_tokens={usage.get('prompt_tokens')} completion_tokens={usage.get('completion_tokens')}")
+            parsed = json.loads(content)
+            record["output"] = parsed
+            record["usage"] = {
+                "input": usage.get("prompt_tokens"),
+                "output": usage.get("completion_tokens"),
+            }
+            return parsed

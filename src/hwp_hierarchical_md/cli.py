@@ -26,6 +26,7 @@ import urllib.request
 from pathlib import Path
 
 from .run_pipeline import PASS1_DIR, PASS2_DIR, STAGE1_DIR, derive_title_from_filename, run_pass1, run_pass2, run_stage1
+from .tracing import flush
 
 SUPPORTED_EXTENSIONS = {".hwp", ".hwpx"}
 
@@ -162,56 +163,62 @@ def run_convert(args: argparse.Namespace) -> int:
 
     pipeline_root = Path(args.pipeline_root)
 
-    if input_path.is_file():
-        output_path = Path(args.output) if args.output else None
-        try:
-            result_path = _process_one(
-                input_path, pipeline_root, output_path, args.model, args.host,
-                args.kordoc_version, args.title, args.skip_existing_stage1, backend=backend,
-            )
-        except Exception as e:
-            print(f"실패: {input_path.name} — {type(e).__name__}: {e}", file=sys.stderr)
+    # 한 번의 CLI 명령이 끝나면 프로세스가 바로 죽는다 — Langfuse가 활성화돼 있으면
+    # 버퍼링된 트레이스가 안 보내진 채 유실될 수 있어, 어느 경로로 끝나든(성공/실패/
+    # 배치 일부 실패) 종료 직전에 반드시 flush한다.
+    try:
+        if input_path.is_file():
+            output_path = Path(args.output) if args.output else None
+            try:
+                result_path = _process_one(
+                    input_path, pipeline_root, output_path, args.model, args.host,
+                    args.kordoc_version, args.title, args.skip_existing_stage1, backend=backend,
+                )
+            except Exception as e:
+                print(f"실패: {input_path.name} — {type(e).__name__}: {e}", file=sys.stderr)
+                return 1
+            print(f"완료 -> {result_path}")
+            return 0
+
+        # 폴더 배치 모드
+        if not args.output:
+            print("폴더를 입력으로 줄 때는 -o/--output(결과 저장 폴더)이 필요합니다.", file=sys.stderr)
             return 1
-        print(f"완료 -> {result_path}")
+        output_dir = Path(args.output)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        pattern = "**/*" if args.recursive else "*"
+        files = sorted(
+            p for p in input_path.glob(pattern) if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
+        if not files:
+            print(f"{input_path} 안에 .hwp/.hwpx 파일이 없습니다.", file=sys.stderr)
+            return 1
+
+        print(f"대상 {len(files)}개 파일 처리 시작")
+        failures: list[tuple[Path, str]] = []
+        for i, f in enumerate(files, 1):
+            print(f"[{i}/{len(files)}] {f.name}")
+            out_path = output_dir / f"{f.name}.md"
+            try:
+                _process_one(
+                    f, pipeline_root, out_path, args.model, args.host,
+                    args.kordoc_version, None, args.skip_existing_stage1, backend=backend,
+                )
+                print(f"  완료 -> {out_path}")
+            except Exception as e:
+                print(f"  실패: {type(e).__name__}: {e}", file=sys.stderr)
+                failures.append((f, str(e)))
+
+        print(f"\n전체 완료: {len(files) - len(failures)}/{len(files)} 성공")
+        if failures:
+            print("실패 목록:", file=sys.stderr)
+            for f, err in failures:
+                print(f"  - {f.name}: {err}", file=sys.stderr)
+            return 1
         return 0
-
-    # 폴더 배치 모드
-    if not args.output:
-        print("폴더를 입력으로 줄 때는 -o/--output(결과 저장 폴더)이 필요합니다.", file=sys.stderr)
-        return 1
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    pattern = "**/*" if args.recursive else "*"
-    files = sorted(
-        p for p in input_path.glob(pattern) if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
-    )
-    if not files:
-        print(f"{input_path} 안에 .hwp/.hwpx 파일이 없습니다.", file=sys.stderr)
-        return 1
-
-    print(f"대상 {len(files)}개 파일 처리 시작")
-    failures: list[tuple[Path, str]] = []
-    for i, f in enumerate(files, 1):
-        print(f"[{i}/{len(files)}] {f.name}")
-        out_path = output_dir / f"{f.name}.md"
-        try:
-            _process_one(
-                f, pipeline_root, out_path, args.model, args.host,
-                args.kordoc_version, None, args.skip_existing_stage1, backend=backend,
-            )
-            print(f"  완료 -> {out_path}")
-        except Exception as e:
-            print(f"  실패: {type(e).__name__}: {e}", file=sys.stderr)
-            failures.append((f, str(e)))
-
-    print(f"\n전체 완료: {len(files) - len(failures)}/{len(files)} 성공")
-    if failures:
-        print("실패 목록:", file=sys.stderr)
-        for f, err in failures:
-            print(f"  - {f.name}: {err}", file=sys.stderr)
-        return 1
-    return 0
+    finally:
+        flush()
 
 
 def build_parser() -> argparse.ArgumentParser:

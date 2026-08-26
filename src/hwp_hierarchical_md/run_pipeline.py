@@ -38,6 +38,7 @@ kordoc은 헤더를 아예 못 만듦) — 당시엔 상호보완 관계라 Stag
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 from pathlib import Path
 
@@ -46,6 +47,7 @@ from .extract_heading_candidates import extract_candidates
 from .fix_bullet_punctuation import fix_bullet_punctuation, find_issues as find_bullet_issues
 from .pass2_window_reformat import derive_title_from_filename, render_markdown
 from .render_from_kordoc_json import render as render_stage1_from_json
+from .tracing import flush, trace_span
 
 STAGE1_DIR = "01-stage1-kordoc"
 PASS1_DIR = "02-pass1-heading-candidates-kordoc"
@@ -88,11 +90,21 @@ def run_pass1(
     if not candidates:
         return []
 
-    merged = classify_and_merge(candidates, model, host, backend=backend)
+    backend_name = type(backend).__name__ if backend is not None else "OllamaBackend"
+    with trace_span(
+        name="classify-document-headings",
+        input={"source": source_name, "candidate_count": len(candidates)},
+        metadata={"model": model, "host": host if backend is None else None},
+        tags=[f"backend:{backend_name}"],
+    ) as span:
+        merged = classify_and_merge(candidates, model, host, backend=backend)
 
-    counts: dict[str, int] = {}
-    for m in merged:
-        counts[m["classification"]] = counts.get(m["classification"], 0) + 1
+        counts: dict[str, int] = {}
+        for m in merged:
+            counts[m["classification"]] = counts.get(m["classification"], 0) + 1
+        if span is not None:
+            with contextlib.suppress(Exception):
+                span.update(output={"classified_count": len(merged), "distribution": counts})
     print(f"      분류 분포: {counts}")
 
     if out_json:
@@ -163,6 +175,10 @@ def main() -> None:
     pass2_path.parent.mkdir(parents=True, exist_ok=True)
     pass2_path.write_text(final_md, encoding="utf-8")
     print(f"\n완료 -> {pass2_path}")
+
+    # 짧게 끝나는 스크립트라 버퍼링된 트레이스가 안 보내진 채로 프로세스가 죽을 수 있다 —
+    # Langfuse가 비활성이면 조용히 아무것도 안 함.
+    flush()
 
 
 if __name__ == "__main__":

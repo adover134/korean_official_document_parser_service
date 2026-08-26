@@ -44,6 +44,7 @@ rowspan/colspan 병합 셀 처리, 밑줄 태그·PUA 유니코드 잔재 제거
 pip install -e .              # CLI만
 pip install -e ".[api]"       # CLI + API(FastAPI) 서버까지
 pip install -e ".[api,dotenv]"  # + .env 자동 로드
+pip install -e ".[dotenv,tracing]"  # + Langfuse 트레이싱까지 (아래 "관측/트레이싱" 참고)
 ```
 
 ## CLI 사용법
@@ -116,9 +117,42 @@ Groq 무료 티어(`openai/gpt-oss-20b`)로 `OpenAICompatBackend` 실제 호출 
   기준으로 튜닝됨)을 훨씬 작게(10~15 수준) 낮추거나 Dev Tier로 업그레이드해야 함 — 코드 버그
   아님, 계정 등급에 따른 제약.
 
+## 관측/트레이싱 (Langfuse)
+
+Pass1(헤더 분류, 유일하게 LLM을 호출하는 단계)의 LLM 호출을
+[Langfuse](https://langfuse.com)로 선택적으로 트레이싱한다(`tracing.py`). 문서 하나당
+span 하나(`classify-document-headings`) 아래에 실제 LLM 호출들이 generation으로 중첩되고,
+후보가 많아 여러 배치로 나뉘면 그 배치별 generation이 형제로 묶인다 — 모델명·입출력·토큰
+사용량·백엔드(`backend:OllamaBackend`/`backend:OpenAICompatBackend` 태그)가 전부 남는다.
+
+```bash
+pip install -e ".[dotenv,tracing]"
+```
+
+`.env`(또는 배포 환경변수)에 다음을 채우면 자동으로 활성화된다 — 안 채우면 조용히 비활성화된
+채로(트레이싱 없이) 정상 동작한다:
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com  # EU. US는 us.cloud.langfuse.com, 셀프호스팅은 그 URL
+LANGFUSE_TRACING_ENVIRONMENT=development  # production/staging과 로컬 테스트 트레이스를 구분(권장)
+```
+
+이 파이프라인은 raw urllib로 LLM API를 직접 호출해서(OpenAI SDK를 안 씀) Langfuse의 자동
+계측을 못 쓴다 — `tracing.py`가 수동으로 계측한다. 실제 호출 데이터는
+[Langfuse CLI](https://langfuse.com/docs/api-and-data-platform/features/cli)로 바로
+확인 가능:
+
+```bash
+npx langfuse-cli api observations list --name classify-document-headings --fields core,basic,io,usage
+```
+
 ## 다음 단계 (미착수)
 
 - Groq 실사용을 위한 청크 크기 자동 조정(제공자별 TPM 한도에 맞춰 `_MAX_CANDIDATES_PER_CALL`을
-  동적으로 낮추는 옵션)
+  동적으로 낮추는 옵션) — 위 Langfuse 트레이싱으로 배치별 실제 토큰 사용량을 대시보드에서 바로
+  볼 수 있게 됐으니, 그 데이터로 임계값을 정하면 됨(트레이싱 자체는 이 튜닝을 대신해주지 않음,
+  가시성만 제공)
 - API에 인증/rate limit 추가 (지금은 열려있는 상태로 배포하면 안 됨 — 프록시/게이트웨이 단에서
   막거나 직접 추가 필요)
