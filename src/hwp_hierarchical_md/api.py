@@ -9,6 +9,8 @@
   HWP2MD_HOST        Ollama 서버 주소 (기본: http://localhost:11434, backend=ollama일 때만)
   HWP2MD_API_KEY     backend가 ollama가 아닐 때 필요 (또는 표준 OPENAI_API_KEY 등도 인식)
   HWP2MD_BASE_URL    OpenAI 호환 엔드포인트 (openai/groq/gemini는 기본값 있음)
+  HWP2MD_API_KEYS              /v1/convert 호출자 인증 키 목록(쉼표 구분). 미설정 시 인증 없이 열림.
+  HWP2MD_RATE_LIMIT_PER_MINUTE API 키별 분당 요청 한도. 미설정 시 rate limit 없음(Langfuse 설정 필요).
 
 실행:
     uvicorn hwp_hierarchical_md.api:app --host 0.0.0.0 --port 8000
@@ -20,13 +22,15 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 
+from .auth import require_api_key
 from .cli import _API_KEY_ENV_VARS, _DEFAULT_BASE_URLS, _load_dotenv_if_present, check_npx
 from .llm_backend import OllamaBackend, OpenAICompatBackend
+from .rate_limit import check_rate_limit
 from .run_pipeline import derive_title_from_filename, run_pass1, run_pass2, run_stage1
-from .tracing import flush
+from .tracing import flush, trace_span
 
 # 배포 환경(Docker 등)은 환경변수를 직접 주입하지만, 로컬에서 uvicorn을 바로 띄워 테스트할 때는
 # cwd의 .env를 못 읽으면 HWP2MD_*/LANGFUSE_* 등이 전부 빠진 채로 서버가 뜬다 — cli.py와 동일하게
@@ -72,11 +76,21 @@ def health() -> dict:
 
 
 @app.post("/v1/convert", response_class=PlainTextResponse)
-async def convert(file: UploadFile = File(...)) -> str:
-    """HWP/HWPX 파일을 업로드하면 계층 구조가 보존된 Markdown을 반환한다."""
+async def convert(
+    file: UploadFile = File(...),
+    api_key: str = Depends(require_api_key),
+) -> str:
+    """HWP/HWPX 파일을 업로드하면 계층 구조가 보존된 Markdown을 반환한다.
+
+    `HWP2MD_API_KEYS`가 설정돼 있으면 `Authorization: Bearer <key>`가 필요하고, 그
+    키 기준으로(`HWP2MD_RATE_LIMIT_PER_MINUTE` 설정 시) 분당 요청 수를 제한한다 — 카운팅은
+    이 요청 자체가 Langfuse에 남기는 `convert-document` 트레이스를 근거로 하므로
+    (`rate_limit.py`), Langfuse 미설정 시엔 인증만 동작하고 rate limit은 적용되지 않는다."""
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
         raise HTTPException(400, f"지원하지 않는 확장자: {suffix!r} (지원: {sorted(SUPPORTED_EXTENSIONS)})")
+
+    check_rate_limit(api_key)
 
     try:
         backend, model, host = _backend_from_env()
@@ -92,10 +106,15 @@ async def convert(file: UploadFile = File(...)) -> str:
         pass1_path = tmp_dir / "pass1.json"
 
         try:
-            stage1_text = run_stage1(input_path, stage1_path, kordoc_version="4.9.0")
-            classified = run_pass1(stage1_text, str(input_path), pass1_path, model, host or "http://localhost:11434", backend=backend)
-            title = derive_title_from_filename(str(input_path))
-            return run_pass2(stage1_text, classified, title)
+            with trace_span(
+                name="convert-document",
+                input={"filename": file.filename, "size_bytes": input_path.stat().st_size},
+                user_id=api_key,
+            ):
+                stage1_text = run_stage1(input_path, stage1_path, kordoc_version="4.9.0")
+                classified = run_pass1(stage1_text, str(input_path), pass1_path, model, host or "http://localhost:11434", backend=backend)
+                title = derive_title_from_filename(str(input_path))
+                return run_pass2(stage1_text, classified, title)
         except Exception as e:
             raise HTTPException(500, f"변환 실패: {type(e).__name__}: {e}") from e
         finally:

@@ -112,21 +112,25 @@ def trace_span(
     input: Any = None,
     metadata: dict[str, Any] | None = None,
     tags: list[str] | None = None,
+    user_id: str | None = None,
 ) -> Iterator[Any]:
-    """문서 하나에 대한 작업 단위(예: Pass1 헤더 분류 전체)를 감싸는 span 겸 트레이스 루트.
+    """문서 하나에 대한 작업 단위(예: Pass1 헤더 분류 전체, API 요청 하나)를 감싸는 span
+    겸 트레이스 루트.
 
-    이 span 안에서 연 generation들은 OTel 컨텍스트로 자동 중첩된다. `tags`는 개별
-    observation이 아니라 트레이스 전체에 붙는 속성이라(Langfuse SDK 제약 —
-    `LangfuseGeneration.update()`엔 tags 인자가 없음) `propagate_attributes()`로 설정한다."""
+    이 span 안에서 연 generation들은 OTel 컨텍스트로 자동 중첩된다. `tags`/`user_id`는
+    개별 observation이 아니라 트레이스 전체에 붙는 속성이라(Langfuse SDK 제약 —
+    `LangfuseGeneration.update()`엔 그런 인자가 없음) `propagate_attributes()`로 설정한다.
+    `user_id`는 API 요청을 감쌀 때(`api.py`) 호출한 API 키를 넘겨, `rate_limit.py`가
+    그 값으로 최근 요청 수를 셀 수 있게 한다."""
     client = _get_client()
-    if client is None or not tags:
+    if client is None or not (tags or user_id):
         with _start_observation(name=name, as_type="span", input=input, metadata=metadata) as span:
             yield span
         return
 
     from langfuse import propagate_attributes
 
-    with propagate_attributes(tags=tags):
+    with propagate_attributes(tags=tags, user_id=user_id):
         with _start_observation(name=name, as_type="span", input=input, metadata=metadata) as span:
             yield span
 

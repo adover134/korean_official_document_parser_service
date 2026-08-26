@@ -67,7 +67,12 @@ hwp2md convert input.hwp -o output.md --backend groq --model openai/gpt-oss-20b
 uvicorn hwp_hierarchical_md.api:app --host 0.0.0.0 --port 8000
 ```
 
-서버 환경변수(클라이언트가 아니라 배포하는 쪽이 한 번 설정):
+서버 환경변수(클라이언트가 아니라 배포하는 쪽이 한 번 설정). 아래 이 문서에 나오는
+`HWP2MD_*`/`LANGFUSE_*` 환경변수는 전부 같은 방식으로 설정한다 — Docker/systemd 등
+배포 환경에 직접 주입해도 되고, `pip install -e ".[api,dotenv]"`처럼 `dotenv` extra를
+설치했다면 서버를 띄우는 작업 디렉터리의 `.env` 파일에 적어둬도 기동 시 자동으로 읽는다
+(`_load_dotenv_if_present()`, `api.py`/`cli.py` 공통). 즉 로컬 개발 중엔 `.env`에,
+운영 배포에선 컨테이너/오케스트레이터의 환경변수 주입 방식에 맞춰 쓰면 된다:
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -78,12 +83,35 @@ uvicorn hwp_hierarchical_md.api:app --host 0.0.0.0 --port 8000
 | `HWP2MD_BASE_URL` | - | openai/groq/gemini는 기본값 있음, 다른 제공자는 직접 지정 |
 
 엔드포인트:
-- `GET /v1/health` — npx/백엔드 설정이 유효한지 점검
+- `GET /v1/health` — npx/백엔드 설정이 유효한지 점검(인증 불필요)
 - `POST /v1/convert` — multipart 파일 업로드(`file` 필드) -> Markdown 텍스트 반환
 
 ```bash
-curl -X POST http://localhost:8000/v1/convert -F "file=@공고문.hwp"
+curl -X POST http://localhost:8000/v1/convert -F "file=@공고문.hwp" \
+  -H "Authorization: Bearer $HWP2MD_API_KEYS"   # 인증 활성화 시에만 필요
 ```
+
+### 인증 / rate limit
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `HWP2MD_API_KEYS` | - | 쉼표로 구분한 허용 API 키 목록. 미설정 시 인증 없이 열린 상태로 동작(로컬/사내망용) |
+| `HWP2MD_RATE_LIMIT_PER_MINUTE` | - | API 키 하나당 분당 요청 한도. 미설정 시 rate limit 없음 |
+
+`HWP2MD_API_KEYS`를 설정하면 `/v1/convert`가 `Authorization: Bearer <key>` 헤더를 요구한다
+(없거나 틀리면 401). `HWP2MD_RATE_LIMIT_PER_MINUTE`까지 설정하면 API 키별 분당 요청 수를
+제한한다(초과 시 429) — 별도 카운터 저장소 없이, 요청마다 이미 남기는 Langfuse 트레이스
+(아래 "관측/트레이싱" 참고, 요청을 호출한 API 키가 `user_id`로 태깅됨)를 그대로 세어서
+판단하므로 **rate limit을 쓰려면 Langfuse 설정이 먼저 돼 있어야 한다** — 아래 절의 안내대로
+`.env`에 `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_BASE_URL`을 채우면 인증과
+별개로 자동 활성화된다. Langfuse 미설정 시 인증은 그대로 동작하고 rate limit만 조용히
+꺼진 채로 동작한다.
+
+**한계(실측 확인됨, `rate_limit.py` 참고)**: Langfuse는 트레이스를 인입한 뒤 조회 API에서
+실제로 반환되기까지 색인 지연이 있다 — 몇 초 안에도 안 잡히는 경우를 실측으로 확인했다.
+그래서 이 rate limit은 정확한 실시간 카운터가 아니라 대략적인 제한이고, **같은 지연 구간에
+몰린 버스트 요청은 한도를 넘겨도 통과할 수 있다.** 지속적인 남용을 거칠게 막는 용도로만
+쓰고, 정확한 하드 리밋이 필요하면 별도 카운터(Redis 등)를 추가해야 한다.
 
 ## Docker로 배포
 
@@ -119,11 +147,13 @@ Groq 무료 티어(`openai/gpt-oss-20b`)로 `OpenAICompatBackend` 실제 호출 
 
 ## 관측/트레이싱 (Langfuse)
 
-Pass1(헤더 분류, 유일하게 LLM을 호출하는 단계)의 LLM 호출을
-[Langfuse](https://langfuse.com)로 선택적으로 트레이싱한다(`tracing.py`). 문서 하나당
-span 하나(`classify-document-headings`) 아래에 실제 LLM 호출들이 generation으로 중첩되고,
-후보가 많아 여러 배치로 나뉘면 그 배치별 generation이 형제로 묶인다 — 모델명·입출력·토큰
-사용량·백엔드(`backend:OllamaBackend`/`backend:OpenAICompatBackend` 태그)가 전부 남는다.
+API 요청 하나당 트레이스 루트 span(`convert-document`, 호출한 API 키가 `user_id`로 태깅됨)
+아래에 Pass1(헤더 분류, 유일하게 LLM을 호출하는 단계)의 span(`classify-document-headings`)이
+중첩되고, 그 안에 실제 LLM 호출들이 generation으로 다시 중첩된다(후보가 많아 여러 배치로
+나뉘면 배치별 generation이 형제로 묶임) — 모델명·입출력·토큰 사용량·백엔드
+(`backend:OllamaBackend`/`backend:OpenAICompatBackend` 태그)가 전부 남는다
+([Langfuse](https://langfuse.com), `tracing.py`로 선택적 활성화). 이 트레이스는 위
+"인증 / rate limit" 절의 분당 요청 제한 판단에도 그대로 쓰인다.
 
 ```bash
 pip install -e ".[dotenv,tracing]"
@@ -140,12 +170,18 @@ LANGFUSE_TRACING_ENVIRONMENT=development  # production/staging과 로컬 테스�
 ```
 
 이 파이프라인은 raw urllib로 LLM API를 직접 호출해서(OpenAI SDK를 안 씀) Langfuse의 자동
-계측을 못 쓴다 — `tracing.py`가 수동으로 계측한다. 실제 호출 데이터는
-[Langfuse CLI](https://langfuse.com/docs/api-and-data-platform/features/cli)로 바로
-확인 가능:
+계측을 못 쓴다 — `tracing.py`가 수동으로 계측한다. 실제 호출 데이터는 이미 설치돼 있는
+[langfuse-python](https://github.com/langfuse/langfuse-python) SDK로 바로 조회 가능하다
+(Node.js 별도 설치가 필요한 Langfuse CLI 대신, `rate_limit.py`가 rate limit 판단에 쓰는 것과
+동일한 `client.api.observations.get_many()` 호출):
 
 ```bash
-npx langfuse-cli api observations list --name classify-document-headings --fields core,basic,io,usage
+python3 -c "
+from hwp_hierarchical_md.cli import _load_dotenv_if_present; _load_dotenv_if_present()
+from langfuse import get_client
+for o in get_client().api.observations.get_many(name='classify-document-headings', limit=5).data:
+    print(o.id, o.start_time, o.user_id)
+"
 ```
 
 ## 다음 단계 (미착수)
@@ -154,5 +190,3 @@ npx langfuse-cli api observations list --name classify-document-headings --field
   동적으로 낮추는 옵션) — 위 Langfuse 트레이싱으로 배치별 실제 토큰 사용량을 대시보드에서 바로
   볼 수 있게 됐으니, 그 데이터로 임계값을 정하면 됨(트레이싱 자체는 이 튜닝을 대신해주지 않음,
   가시성만 제공)
-- API에 인증/rate limit 추가 (지금은 열려있는 상태로 배포하면 안 됨 — 프록시/게이트웨이 단에서
-  막거나 직접 추가 필요)
