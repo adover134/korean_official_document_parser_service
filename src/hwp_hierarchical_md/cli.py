@@ -115,6 +115,7 @@ def _process_one(
     title: str | None,
     skip_existing_stage1: bool,
     backend=None,
+    max_candidates_per_call: int | None = None,
 ) -> Path:
     """단일 파일을 Stage1->Pass1->Pass2로 처리하고 최종 결과 경로를 반환. 실패 시 예외 발생."""
     base = input_path.name
@@ -127,7 +128,10 @@ def _process_one(
     else:
         stage1_text = run_stage1(input_path, stage1_path, kordoc_version)
 
-    classified = run_pass1(stage1_text, str(stage1_path), pass1_path, model, host, backend=backend)
+    classified = run_pass1(
+        stage1_text, str(stage1_path), pass1_path, model, host, backend=backend,
+        max_candidates_per_call=max_candidates_per_call,
+    )
 
     final_title = title or derive_title_from_filename(str(stage1_path))
     final_md = run_pass2(stage1_text, classified, final_title)
@@ -173,6 +177,7 @@ def run_convert(args: argparse.Namespace) -> int:
                 result_path = _process_one(
                     input_path, pipeline_root, output_path, args.model, args.host,
                     args.kordoc_version, args.title, args.skip_existing_stage1, backend=backend,
+                    max_candidates_per_call=args.max_candidates_per_call,
                 )
             except Exception as e:
                 print(f"실패: {input_path.name} — {type(e).__name__}: {e}", file=sys.stderr)
@@ -204,6 +209,7 @@ def run_convert(args: argparse.Namespace) -> int:
                 _process_one(
                     f, pipeline_root, out_path, args.model, args.host,
                     args.kordoc_version, None, args.skip_existing_stage1, backend=backend,
+                    max_candidates_per_call=args.max_candidates_per_call,
                 )
                 print(f"  완료 -> {out_path}")
             except Exception as e:
@@ -237,6 +243,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     convert.add_argument("--api-key", help="--backend가 ollama가 아닐 때 필요한 API 키")
     convert.add_argument("--base-url", help="OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음, 다른 제공자는 직접 지정)")
+    convert.add_argument(
+        "--max-candidates-per-call", type=int, default=None,
+        help=(
+            "Pass1 LLM 호출 하나당 넘길 헤더 후보 최대 개수 (미지정 시 Ollama VRAM 기준 기본값 사용). "
+            "Groq 등 TPM 한도가 낮은 클라우드 백엔드는 이 값을 낮춰야 할 수 있음 — Langfuse 트레이싱으로 "
+            "배치별 실제 토큰 사용량을 보고 조절할 것 (README '관측/트레이싱' 참고)"
+        ),
+    )
     convert.add_argument("--kordoc-version", default="4.9.0")
     convert.add_argument("--title", help="문서 제목 (파일 입력에만 적용, 미지정 시 파일명에서 유도)")
     convert.add_argument("--recursive", action="store_true", help="폴더 입력 시 하위 폴더까지 재귀 탐색")

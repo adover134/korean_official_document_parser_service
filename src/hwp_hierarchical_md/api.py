@@ -22,7 +22,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from .auth import require_api_key
@@ -78,6 +78,7 @@ def health() -> dict:
 @app.post("/v1/convert", response_class=PlainTextResponse)
 async def convert(
     file: UploadFile = File(...),
+    max_candidates_per_call: int | None = Form(default=None, gt=0),
     api_key: str = Depends(require_api_key),
 ) -> str:
     """HWP/HWPX 파일을 업로드하면 계층 구조가 보존된 Markdown을 반환한다.
@@ -85,7 +86,13 @@ async def convert(
     `HWP2MD_API_KEYS`가 설정돼 있으면 `Authorization: Bearer <key>`가 필요하고, 그
     키 기준으로(`HWP2MD_RATE_LIMIT_PER_MINUTE` 설정 시) 분당 요청 수를 제한한다 — 카운팅은
     이 요청 자체가 Langfuse에 남기는 `convert-document` 트레이스를 근거로 하므로
-    (`rate_limit.py`), Langfuse 미설정 시엔 인증만 동작하고 rate limit은 적용되지 않는다."""
+    (`rate_limit.py`), Langfuse 미설정 시엔 인증만 동작하고 rate limit은 적용되지 않는다.
+
+    `max_candidates_per_call`(선택, multipart 필드)은 Pass1 LLM 호출 하나당 넘길 헤더 후보
+    최대 개수를 이 요청에 한해 오버라이드한다 — 서버가 배포 시 고정해둔 백엔드(`HWP2MD_BACKEND`)의
+    TPM 한도가 낮아 배치가 계속 실패할 때, 서버 재시작 없이 호출자가 직접 낮춰서 재시도할 수 있게
+    열어둔 값이다(위 "인증/rate limit"처럼 클라이언트가 서버의 LLM 키를 대신 쓰는 게 아니라, 이미
+    설정된 백엔드에 보낼 배치 크기만 조절하는 것). 미지정 시 서버 기본값(Ollama VRAM 기준)을 쓴다."""
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
         raise HTTPException(400, f"지원하지 않는 확장자: {suffix!r} (지원: {sorted(SUPPORTED_EXTENSIONS)})")
@@ -112,7 +119,10 @@ async def convert(
                 user_id=api_key,
             ):
                 stage1_text = run_stage1(input_path, stage1_path, kordoc_version="4.9.0")
-                classified = run_pass1(stage1_text, str(input_path), pass1_path, model, host or "http://localhost:11434", backend=backend)
+                classified = run_pass1(
+                    stage1_text, str(input_path), pass1_path, model, host or "http://localhost:11434",
+                    backend=backend, max_candidates_per_call=max_candidates_per_call,
+                )
                 title = derive_title_from_filename(str(input_path))
                 return run_pass2(stage1_text, classified, title)
         except Exception as e:

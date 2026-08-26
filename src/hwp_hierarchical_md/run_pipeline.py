@@ -81,11 +81,13 @@ def run_pass1(
     model: str | None = None,
     host: str = "http://localhost:11434",
     backend=None,
+    max_candidates_per_call: int | None = None,
 ) -> list[dict]:
     """제목 후보 추출(규칙) + 계층 분류(LLM)를 실행하고, 지정 시 결과를 JSON으로 저장.
 
     `backend`를 주면 Ollama 대신 그 백엔드(예: OpenAI 호환 API)로 분류한다 — `classify_and_merge()`
-    참고."""
+    참고. `max_candidates_per_call`은 그 함수의 같은 이름 인자로 그대로 전달되며, 미지정 시
+    `classify_headings_pass1._MAX_CANDIDATES_PER_CALL`(Ollama VRAM 기준 기본값)을 쓴다."""
     candidates = extract_candidates(stage1_text)
     if not candidates:
         return []
@@ -94,10 +96,14 @@ def run_pass1(
     with trace_span(
         name="classify-document-headings",
         input={"source": source_name, "candidate_count": len(candidates)},
-        metadata={"model": model, "host": host if backend is None else None},
+        metadata={
+            "model": model,
+            "host": host if backend is None else None,
+            "max_candidates_per_call": max_candidates_per_call,
+        },
         tags=[f"backend:{backend_name}"],
     ) as span:
-        merged = classify_and_merge(candidates, model, host, backend=backend)
+        merged = classify_and_merge(candidates, model, host, backend=backend, max_candidates_per_call=max_candidates_per_call)
 
         counts: dict[str, int] = {}
         for m in merged:

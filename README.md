@@ -59,6 +59,10 @@ hwp2md convert input_dir -o output_dir --recursive   # 하위 폴더까지
 hwp2md convert input.hwp -o output.md --backend groq --model openai/gpt-oss-20b
 # --api-key를 직접 안 주면 GROQ_API_KEY/OPENAI_API_KEY/GEMINI_API_KEY 환경변수(또는 cwd의
 # .env, python-dotenv 설치돼 있으면 자동 로드)에서 읽는다.
+
+# Groq 등 TPM 한도가 낮은 백엔드에서 배치 요청이 계속 실패하면 후보 배치 크기를 직접 낮춤
+# (기본값은 Ollama VRAM 기준 70 — 아래 "LLM 백엔드 검증 메모" 참고)
+hwp2md convert input.hwp -o output.md --backend groq --model openai/gpt-oss-20b --max-candidates-per-call 10
 ```
 
 ## API 사용법
@@ -87,8 +91,10 @@ uvicorn hwp_hierarchical_md.api:app --host 0.0.0.0 --port 8000
 - `POST /v1/convert` — multipart 파일 업로드(`file` 필드) -> Markdown 텍스트 반환
 
 ```bash
+# -H는 인증 활성화 시에만, -F max_candidates_per_call은 선택(아래 "Groq TPM 튜닝" 참고)
 curl -X POST http://localhost:8000/v1/convert -F "file=@공고문.hwp" \
-  -H "Authorization: Bearer $HWP2MD_API_KEYS"   # 인증 활성화 시에만 필요
+  -H "Authorization: Bearer $HWP2MD_API_KEYS" \
+  -F "max_candidates_per_call=10"
 ```
 
 ### 인증 / rate limit
@@ -141,9 +147,9 @@ Groq 무료 티어(`openai/gpt-oss-20b`)로 `OpenAICompatBackend` 실제 호출 
   (한국어, 약 4500토큰)만으로 최소 요청도 이 한도에 근접/초과한다(실측: 후보 34개 문서 요청 시
   9121 토큰 필요, 8000 한도 초과). 작은 후보 목록(3개)으로 인터페이스 자체는 정상 동작 확인
   (정확한 분류 반환, "대표자 : (인)" 서명란도 not_heading으로 정확히 판단) — 실사용 시 Groq
-  무료 티어를 쓰려면 `classify_headings_pass1._MAX_CANDIDATES_PER_CALL`(현재 70, Ollama VRAM
-  기준으로 튜닝됨)을 훨씬 작게(10~15 수준) 낮추거나 Dev Tier로 업그레이드해야 함 — 코드 버그
-  아님, 계정 등급에 따른 제약.
+  무료 티어를 쓰려면 배치 크기(기본 70, Ollama VRAM 기준으로 튜닝된 값)를 훨씬 작게(10~15 수준)
+  낮추거나(CLI `--max-candidates-per-call` / API `max_candidates_per_call` 필드, 아래 "Groq
+  TPM 튜닝" 참고) Dev Tier로 업그레이드해야 함 — 코드 버그 아님, 계정 등급에 따른 제약.
 
 ## 관측/트레이싱 (Langfuse)
 
@@ -187,8 +193,10 @@ for o in get_client().api.observations.get_many(name='classify-document-headings
 ### Groq TPM 튜닝은 트레이싱을 보고 직접 조절
 
 Groq 무료 티어는 실제 TPM(분당 토큰) 한도를 API로 조회할 방법을 제공하지 않는다(유료/Dev
-Tier로 올려야 대시보드에 노출됨) — 그래서 제공자별 한도에 맞춰
-`classify_headings_pass1._MAX_CANDIDATES_PER_CALL`을 자동으로 낮추는 기능은 만들지 않는다.
-대신 위 트레이싱으로 배치별 실제 토큰 사용량(입력·출력)을 Langfuse 대시보드에서 바로 볼 수
-있으니, "LLM 백엔드 검증 메모"의 실측값(위 참고)을 기준 삼아 그 값을 보고 운영자가 직접
-`_MAX_CANDIDATES_PER_CALL`을 조절하면 된다.
+Tier로 올려야 대시보드에 노출됨) — 그래서 제공자별 한도를 감지해 배치 크기를 **자동으로**
+낮추는 기능은 만들지 않는다. 대신 위 트레이싱으로 배치별 실제 토큰 사용량(입력·출력)을
+Langfuse 대시보드에서 직접 보고, CLI는 `--max-candidates-per-call`, API는 `/v1/convert`의
+`max_candidates_per_call` multipart 필드로 서버 재시작이나 소스 수정 없이 그 값을 조절하면
+된다("LLM 백엔드 검증 메모"의 실측값이 대략적인 시작점). API 쪽은 서버가 배포 시 고정해둔
+백엔드(`HWP2MD_BACKEND`)에 보낼 배치 크기만 요청자가 조절하는 것으로, 위 "인증/rate limit"과
+마찬가지로 서버의 LLM 키 자체를 클라이언트가 대신 쓰는 구조는 아니다.
