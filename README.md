@@ -45,6 +45,17 @@ pip install -e .              # CLI만
 pip install -e ".[api]"       # CLI + API(FastAPI) 서버까지
 pip install -e ".[api,dotenv]"  # + .env 자동 로드
 pip install -e ".[dotenv,tracing]"  # + Langfuse 트레이싱까지 (아래 "관측/트레이싱" 참고)
+pip install -e ".[test]"      # 개발 시 테스트 실행용 (배포에는 불필요)
+```
+
+## 테스트
+
+LLM 호출 없이 결정론적으로 동작하는 순수 변환 로직(`normalize_html_tables.py` 등)은
+회귀 테스트로 고정돼 있다:
+
+```bash
+pip install -e ".[test]"
+pytest tests/
 ```
 
 ## CLI 사용법
