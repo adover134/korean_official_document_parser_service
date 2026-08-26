@@ -1,25 +1,32 @@
-# hwp-hierarchical-md (service/CLI + API 버전)
+# hwp-hierarchical-md
 
-공개 저장소 [hwp-hierarchical-md-skill](https://github.com/adover134/korean_official_document_parser_skill)의
-파이프라인 코드를 pip 설치 가능한 패키지 + CLI + 배포용 API로 재구성한 버전. 파싱/판단 로직 자체는
-스킬 저장소와 동일하다 — 여기는 "서비스로 배포해서 쓸 수 있게 만드는" 확장만 다룬다(CLI 폴더 배치
-처리, 사전 환경 점검, FastAPI 배포 레이어). 설계/아키텍처 설명은 스킬 저장소의 README/SKILL.md를
-참고.
+계층 구조를 가진 한글(HWP/HWPX) 공문서를, 원문의 섹션 계층(대분류·중분류·첨부)을 보존한 채
+Markdown으로 변환하는 pip 설치 가능한 패키지 + CLI + 배포용 API. 한국 공공기관 입찰공고문 42건을
+대상으로 검증했다.
 
-## 스킬 저장소와의 차이
+HWP→Markdown 변환 라이브러리(예: [`kordoc`](https://www.npmjs.com/package/kordoc))는 표·서식·
+읽기 순서는 충실히 보존하지만, "이 줄이 최상위 섹션 제목인지, 그 하위 세부항목인지, 아니면 서명란
+같은 비-헤더인지"는 판단하지 못한다. 원문 스타일 메타데이터(폰트 크기, 볼드 여부)만으로는 계층을
+안정적으로 재구성할 수 없다 — 같은 "1. 2. 3." 번호 매김이 문서 최상위 섹션에도, 그 안의
+체크리스트에도, 별도 첨부(붙임/서식)에도 반복해서 쓰이기 때문이다. 그렇다고 LLM에게 문서 전체를
+통째로 다시 쓰게 하면, 문단이 빠지거나 없는 헤더가 생기는 등 콘텐츠 손실 위험이 생긴다. 이 도구는
+"판단"(어디가 헤더인가)과 "변환"(원문을 그대로 옮기는 것)을 분리해, LLM은 각 줄이 헤더인지
+아닌지만 판단하게 하고 원문 자체는 건드리지 않는 2-pass 파이프라인으로 이 문제를 푼다.
 
-- `run_pipeline.py`가 단일 파일만 처리했던 것을, `hwp2md convert`가 **폴더 입력(배치 처리)**도
-  받도록 확장 (`cli.py`).
-- kordoc(npx)·Ollama가 준비 안 된 상태에서 처리 도중 알아보기 힘든 subprocess 에러로 죽는 대신,
-  시작 전에 `hwp2md doctor`(또는 `convert` 내장 사전 점검)로 분명한 진단 메시지를 낸다.
-- `pip install -e .`로 설치 가능한 패키지 구조(`pyproject.toml`, `src/` 레이아웃, `hwp2md` 콘솔
-  스크립트 진입점)로 재구성.
-- **배포용 HTTP API(`api.py`, FastAPI)** — `POST /v1/convert`에 HWP/HWPX 파일을 올리면 Markdown을
-  반환한다. 서버 쪽에서 백엔드를 환경변수로 미리 설정해두므로(`HWP2MD_BACKEND` 등) 클라이언트가
-  자기 LLM 키를 들고 올 필요가 없다. `Dockerfile`로 바로 컨테이너 배포 가능.
+## 특징
 
-(LLM 백엔드 추상화(`llm_backend.py`, Ollama + OpenAI 호환)는 스킬 저장소에도 동일하게 들어가
-있다 — 두 저장소가 같은 핵심 로직을 공유하고, 이쪽은 배포 편의 기능만 추가한 구조다.)
+- **CLI 폴더 배치 처리** — `hwp2md convert`가 단일 파일뿐 아니라 폴더 입력(재귀 옵션 포함)도
+  받는다 (`cli.py`).
+- **사전 환경 점검** — kordoc(npx)·Ollama가 준비 안 된 상태에서 처리 도중 알아보기 힘든
+  subprocess 에러로 죽는 대신, 시작 전에 `hwp2md doctor`(또는 `convert` 내장 사전 점검)로 분명한
+  진단 메시지를 낸다.
+- **pip 설치 가능한 패키지 구조** (`pyproject.toml`, `src/` 레이아웃, `hwp2md` 콘솔 스크립트
+  진입점).
+- **배포용 HTTP API** (`api.py`, FastAPI) — `POST /v1/convert`에 HWP/HWPX 파일을 올리면
+  Markdown을 반환한다. 서버 쪽에서 백엔드를 환경변수로 미리 설정해두므로(`HWP2MD_BACKEND` 등)
+  클라이언트가 자기 LLM 키를 들고 올 필요가 없다. `Dockerfile`로 바로 컨테이너 배포 가능.
+- **LLM 백엔드 추상화** (`llm_backend.py`, Ollama + OpenAI 호환 — Groq/OpenAI/Gemini 등 어떤
+  OpenAI 호환 엔드포인트도 백엔드로 쓸 수 있음).
 
 ## 표 처리
 
