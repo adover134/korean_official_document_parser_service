@@ -184,9 +184,11 @@ for o in get_client().api.observations.get_many(name='classify-document-headings
 "
 ```
 
-## 다음 단계 (미착수)
+### Groq TPM 튜닝은 트레이싱을 보고 직접 조절
 
-- Groq 실사용을 위한 청크 크기 자동 조정(제공자별 TPM 한도에 맞춰 `_MAX_CANDIDATES_PER_CALL`을
-  동적으로 낮추는 옵션) — 위 Langfuse 트레이싱으로 배치별 실제 토큰 사용량을 대시보드에서 바로
-  볼 수 있게 됐으니, 그 데이터로 임계값을 정하면 됨(트레이싱 자체는 이 튜닝을 대신해주지 않음,
-  가시성만 제공)
+Groq 무료 티어는 실제 TPM(분당 토큰) 한도를 API로 조회할 방법을 제공하지 않는다(유료/Dev
+Tier로 올려야 대시보드에 노출됨) — 그래서 제공자별 한도에 맞춰
+`classify_headings_pass1._MAX_CANDIDATES_PER_CALL`을 자동으로 낮추는 기능은 만들지 않는다.
+대신 위 트레이싱으로 배치별 실제 토큰 사용량(입력·출력)을 Langfuse 대시보드에서 바로 볼 수
+있으니, "LLM 백엔드 검증 메모"의 실측값(위 참고)을 기준 삼아 그 값을 보고 운영자가 직접
+`_MAX_CANDIDATES_PER_CALL`을 조절하면 된다.
