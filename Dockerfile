@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg \
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-cache-dir -e ".[api,dotenv]"
+RUN pip install --no-cache-dir -e ".[api,dotenv,tracing]"
 
 # kordoc을 미리 한 번 받아둬서(콜드스타트 시 npx 다운로드 지연 방지) 첫 요청부터 빠르게
 RUN npx --yes kordoc@4.9.0 --version || true
