@@ -28,6 +28,36 @@ HWP→Markdown 변환 라이브러리(예: [`kordoc`](https://www.npmjs.com/pack
 - **LLM 백엔드 추상화** (`llm_backend.py`, Ollama + OpenAI 호환 — Groq/OpenAI/Gemini 등 어떤
   OpenAI 호환 엔드포인트도 백엔드로 쓸 수 있음).
 
+## 아키텍처
+
+같은 파싱 로직을 CLI와 HTTP API 두 진입점으로 감싼다 — CLI는 서비스 제공자가 직접 돌리는
+운영 도구라 인증이 없고, HTTP API만 인증·rate limit이 걸린다.
+
+```mermaid
+flowchart LR
+    IN["HWP/HWPX 파일"]
+    subgraph CLI["CLI 진입점 — 운영자가 직접 실행 / 자동화"]
+        CLI1["hwp2md convert"]
+    end
+    subgraph API["HTTP API 진입점 — 서비스 사용자용"]
+        direction TB
+        C["Authorization: Bearer 검증\nHWP2MD_API_KEYS"] -->|"401 미인증 거부"| X1["요청 거부"]
+        C -->|"인증 통과"| D["분당 요청 수 검사\nLangfuse 트레이스 카운트 기반"]
+        D -->|"429 한도 초과"| X2["요청 거부"]
+    end
+    IN --> CLI1
+    IN --> C
+    CLI1 --> E["파싱 파이프라인(공통)\nStage1 → Pass1 → Pass2"]
+    D -->|"통과"| E
+    E -->|"제공자 API 토큰 한도 초과 응답"| R["실측 Limit/Requested 비율로\n배치 자동 축소 후 재시도"]
+    R -.-> E
+    E -->|"매 LLM 호출마다 기록"| T["Langfuse 트레이싱\n모델 · 토큰 사용량 · 배치 구조"]
+    E --> F["최종 Markdown 응답"]
+```
+
+rate limit조차 별도 카운터 저장소 없이, 이미 남기고 있는 Langfuse 트레이스를 그대로 근거로
+쓴다(아래 "관측/트레이싱" 참고).
+
 ## 표 처리
 
 `normalize_html_tables.py`가 kordoc의 raw HTML `<table>`을 GFM pipe-table로 정규화한다.
