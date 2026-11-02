@@ -118,7 +118,7 @@ async def convert(
                 input={"filename": file.filename, "size_bytes": input_path.stat().st_size},
                 user_id=api_key,
             ):
-                stage1_text = run_stage1(input_path, stage1_path, kordoc_version="4.9.0")
+                stage1_text = run_stage1(input_path, stage1_path, kordoc_version="4.24.29")
                 classified = run_pass1(
                     stage1_text, str(input_path), pass1_path, model, host or "http://localhost:11434",
                     backend=backend, max_candidates_per_call=max_candidates_per_call,

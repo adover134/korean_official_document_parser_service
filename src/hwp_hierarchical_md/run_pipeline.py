@@ -31,7 +31,7 @@ kordoc은 헤더를 아예 못 만듦) — 당시엔 상호보완 관계라 Stag
 
 사용법:
     python run_pipeline.py <input.hwp|hwpx|pdf> [--pipeline-root pipeline]
-        [--model qwen3.5:9b] [--host http://localhost:11434] [--kordoc-version 4.9.0]
+        [--model qwen3.5:9b] [--host http://localhost:11434] [--kordoc-version 4.24.29]
         [--title TITLE] [-o OUTPUT] [--skip-existing-stage1]
 """
 
@@ -139,7 +139,7 @@ def main() -> None:
     ap.add_argument("--pipeline-root", default="pipeline", help="Stage1/Pass1/Pass2 출력 루트 (기본: pipeline/)")
     ap.add_argument("--model", default="qwen3.5:9b")
     ap.add_argument("--host", default="http://localhost:11434")
-    ap.add_argument("--kordoc-version", default="4.9.0")
+    ap.add_argument("--kordoc-version", default="4.24.29")
     ap.add_argument("--title", help="문서 제목 (미지정 시 파일명에서 유도)")
     ap.add_argument("-o", "--output", help="최종 결과 저장 경로 (미지정 시 pipeline-root/03-.../<파일명>.md)")
     ap.add_argument(

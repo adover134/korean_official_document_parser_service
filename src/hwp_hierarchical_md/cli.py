@@ -251,7 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
             "배치별 실제 토큰 사용량을 보고 조절할 것 (README '관측/트레이싱' 참고)"
         ),
     )
-    convert.add_argument("--kordoc-version", default="4.9.0")
+    convert.add_argument("--kordoc-version", default="4.24.29")
     convert.add_argument("--title", help="문서 제목 (파일 입력에만 적용, 미지정 시 파일명에서 유도)")
     convert.add_argument("--recursive", action="store_true", help="폴더 입력 시 하위 폴더까지 재귀 탐색")
     convert.add_argument("--skip-existing-stage1", action="store_true", help="기존 Stage1 결과가 있으면 재사용")
