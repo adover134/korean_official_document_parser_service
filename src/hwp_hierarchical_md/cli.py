@@ -239,7 +239,7 @@ def build_parser() -> argparse.ArgumentParser:
     convert.add_argument("--host", default="http://localhost:11434", help="--backend ollama일 때만 사용")
     convert.add_argument(
         "--backend", choices=["ollama", "openai", "groq", "gemini"], default="ollama",
-        help="Pass1b(헤더 계층 판단) LLM 호출 방식. ollama(기본, 로컬) 외에는 --api-key 필요",
+        help="계층 추출(헤더 판단) LLM 호출 방식. ollama(기본, 로컬) 외에는 --api-key 필요",
     )
     convert.add_argument("--api-key", help="--backend가 ollama가 아닐 때 필요한 API 키")
     convert.add_argument("--base-url", help="OpenAI 호환 엔드포인트 base URL (openai/groq/gemini는 기본값 있음, 다른 제공자는 직접 지정)")
