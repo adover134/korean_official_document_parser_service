@@ -130,7 +130,7 @@ uvicorn hwp_hierarchical_md.api:app --host 0.0.0.0 --port 8000
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `HWP2MD_BACKEND` | `ollama` | `ollama` \| `openai` \| `groq` \| `gemini` |
-| `HWP2MD_MODEL` | `qwen3.5:9b` | 모델명 |
+| `HWP2MD_MODEL` | `gpt-oss:20b` | 모델명 |
 | `HWP2MD_HOST` | `http://localhost:11434` | `ollama`일 때만, Ollama 서버 주소 |
 | `HWP2MD_API_KEY` | - | `ollama`가 아닐 때 필요 (또는 `OPENAI_API_KEY` 등 표준 이름도 인식) |
 | `HWP2MD_BASE_URL` | - | openai/groq/gemini는 기본값 있음, 다른 제공자는 직접 지정 |

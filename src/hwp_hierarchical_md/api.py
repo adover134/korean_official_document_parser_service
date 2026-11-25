@@ -5,7 +5,7 @@
 
 환경변수:
   HWP2MD_BACKEND     ollama(기본) | openai | groq | gemini
-  HWP2MD_MODEL       모델명 (기본: qwen3.5:9b)
+  HWP2MD_MODEL       모델명 (기본: gpt-oss:20b)
   HWP2MD_HOST        Ollama 서버 주소 (기본: http://localhost:11434, backend=ollama일 때만)
   HWP2MD_API_KEY     backend가 ollama가 아닐 때 필요 (또는 표준 OPENAI_API_KEY 등도 인식)
   HWP2MD_BASE_URL    OpenAI 호환 엔드포인트 (openai/groq/gemini는 기본값 있음)
@@ -48,7 +48,7 @@ app = FastAPI(
 
 def _backend_from_env():
     backend_name = os.environ.get("HWP2MD_BACKEND", "ollama")
-    model = os.environ.get("HWP2MD_MODEL", "qwen3.5:9b")
+    model = os.environ.get("HWP2MD_MODEL", "gpt-oss:20b")
     if backend_name == "ollama":
         host = os.environ.get("HWP2MD_HOST", "http://localhost:11434")
         return None, model, host  # run_pass1이 model/host로 OllamaBackend를 알아서 만듦

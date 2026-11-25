@@ -235,7 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
     convert.add_argument("input", help="입력 파일 또는 폴더 경로")
     convert.add_argument("-o", "--output", help="출력 경로 (파일 입력: 결과 .md 경로 / 폴더 입력: 결과 저장 폴더, 필수)")
     convert.add_argument("--pipeline-root", default="pipeline", help="Stage1/Pass1 중간 산출물 저장 위치 (기본: pipeline/)")
-    convert.add_argument("--model", default="qwen3.5:9b", help="ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명")
+    convert.add_argument("--model", default="gpt-oss:20b", help="ollama 모델명, 또는 다른 backend일 때 그 제공자의 모델명")
     convert.add_argument("--host", default="http://localhost:11434", help="--backend ollama일 때만 사용")
     convert.add_argument(
         "--backend", choices=["ollama", "openai", "groq", "gemini"], default="ollama",
@@ -258,7 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
     convert.add_argument("--skip-doctor", action="store_true", help="시작 전 환경 점검을 건너뜀")
 
     doctor = sub.add_parser("doctor", help="npx/Ollama 등 실행 환경만 점검")
-    doctor.add_argument("--model", default="qwen3.5:9b")
+    doctor.add_argument("--model", default="gpt-oss:20b")
     doctor.add_argument("--host", default="http://localhost:11434")
 
     return ap
