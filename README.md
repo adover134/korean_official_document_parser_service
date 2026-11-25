@@ -110,7 +110,7 @@ hwp2md convert input.hwp -o output.md --backend groq --model openai/gpt-oss-20b
 # .env, python-dotenv 설치돼 있으면 자동 로드)에서 읽는다.
 
 # Groq 등 TPM 한도가 낮은 백엔드에서 배치 요청이 계속 실패하면 후보 배치 크기를 직접 낮춤
-# (기본값은 Ollama VRAM 기준 70 — 아래 "LLM 백엔드 검증 메모" 참고)
+# (기본값은 gpt-oss:20b를 8GB VRAM에서 돌릴 때 기준 30 — 아래 "LLM 백엔드 검증 메모" 참고)
 hwp2md convert input.hwp -o output.md --backend groq --model openai/gpt-oss-20b --max-candidates-per-call 10
 ```
 
@@ -195,8 +195,8 @@ Groq 무료 티어(`openai/gpt-oss-20b`)로 `OpenAICompatBackend` 실제 호출 
 - **TPM(분당 토큰) 제한** — 신규 계정 기본 한도가 8000 TPM인데, 이 파이프라인의 시스템 프롬프트
   (한국어, 약 4500토큰)만으로 최소 요청도 이 한도에 근접/초과한다(실측: 후보 34개 문서 요청 시
   9121 토큰 필요, 8000 한도 초과). 작은 후보 목록(3개)으로 인터페이스 자체는 정상 동작 확인
-  (정확한 분류 반환, "대표자 : (인)" 서명란도 not_heading으로 정확히 판단) — 배치 크기(기본 70,
-  Ollama VRAM 기준으로 튜닝된 값)가 Groq 무료 티어 한도보다 크면 이제 자동으로 줄여 재시도한다
+  (정확한 분류 반환, "대표자 : (인)" 서명란도 not_heading으로 정확히 판단) — 배치 크기(기본 30,
+  gpt-oss:20b를 8GB VRAM에서 돌릴 때 기준으로 튜닝된 값)가 Groq 무료 티어 한도보다 크면 이제 자동으로 줄여 재시도한다
   (아래 "Groq TPM 대응" 참고, 2026-08-27) — 여전히 계속 실패하면 Dev Tier로 업그레이드가
   필요할 수 있음(코드 버그 아님, 계정 등급에 따른 제약).
 
